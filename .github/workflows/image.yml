@@ -1,0 +1,174 @@
+# Build -> base provenance check -> smoke test -> Trivy OS gate -> push the
+# PUBLIC image ghcr.io/maxkuminov/openclaw-tax:<version>-<shortsha>-<n>.
+#
+# Design: maxkuminov/infra docs/homelab-wave-oc.md (OC-D9 tax image, OC-D10
+# upgrades, 5.2 rollback) and docs/homelab-image-automation.md (D1 tags).
+# The homelab k3s tax gateway (namespace openclaw-tax) follows the newest tag
+# published here through Flux image automation; this workflow passing IS the
+# gate for a tax upgrade.
+#
+#   pull_request       build + checks, never push (Renovate's FROM bumps).
+#   push to main       the same, then the current-tip check, then push.
+#   workflow_dispatch  main only: a rebuild of the same FROM, which takes
+#                      Debian's newest fixes through apt-get upgrade and
+#                      publishes the same version under a higher <n>.
+#
+# GitHub-hosted runners only (the homelab ARC runner has no Docker by design;
+# a public repository costs no minutes). Two jobs, so a pull_request run never
+# holds a writable GHCR token: `checks` is read-only, `publish` alone has
+# packages: write.
+name: image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/image.yml
+      - Dockerfile
+      - .dockerignore
+      - .trivyignore
+      - scripts/ci.sh
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/image.yml
+      - Dockerfile
+      - .dockerignore
+      - .trivyignore
+      - scripts/ci.sh
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # Pushes to main are serialized (never cancelled mid-push); PR runs of this
+  # workflow supersede each other.
+  group: image-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE: ghcr.io/maxkuminov/openclaw-tax
+  # Trivy from its container image pinned by digest (0.69.3), the same pin as
+  # the other GHCR image workflows and the homelab gate (docker-build-scan.sh).
+  TRIVY_IMAGE: aquasec/trivy:0.69.3@sha256:bcc376de8d77cfe086a917230e818dc9f8528e3c852f7b1aff648949b6258d1c
+
+jobs:
+  checks:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Parse FROM
+        run: scripts/ci.sh from
+
+      - name: Base revision = upstream tag commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci.sh base-revision
+
+      - name: Build
+        id: build
+        run: scripts/ci.sh build openclaw-tax:ci "$GITHUB_SHA"
+
+      - name: Smoke test
+        run: scripts/ci.sh smoke openclaw-tax:ci
+
+      # Gate: Debian packages only (our apt-get upgrade layer), HIGH/CRITICAL
+      # with an available fix.
+      - name: Trivy OS gate
+        run: scripts/ci.sh trivy-os openclaw-tax:ci
+
+      # Report: upstream's node_modules; never fails the job.
+      - name: Trivy library report (not gating)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: scripts/ci.sh trivy-lib openclaw-tax:ci
+
+  publish:
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Resolve commit
+        run: |
+          set -euo pipefail
+          sha="$GITHUB_SHA"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::bad sha '$sha'"; exit 1; }
+          [[ "$GITHUB_RUN_NUMBER" =~ ^[0-9]+$ ]] || { echo "::error::bad run number"; exit 1; }
+          { echo "BUILD_SHA=$sha"; echo "SHORT_SHA=${sha::7}"; } >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ env.BUILD_SHA }}
+          persist-credentials: false
+
+      - name: Parse FROM
+        run: scripts/ci.sh from
+
+      - name: Base revision = upstream tag commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci.sh base-revision
+
+      - name: Build
+        id: build
+        run: scripts/ci.sh build openclaw-tax:ci "$BUILD_SHA"
+
+      - name: Smoke test
+        run: scripts/ci.sh smoke openclaw-tax:ci
+
+      - name: Trivy OS gate
+        run: scripts/ci.sh trivy-os openclaw-tax:ci
+
+      - name: Trivy library report (not gating)
+        if: ${{ !cancelled() && steps.build.outcome == 'success' }}
+        run: scripts/ci.sh trivy-lib openclaw-tax:ci
+
+      # D1 (image-automation): refuse to publish when the built commit is no
+      # longer the tip of main, so a slower run for an older push cannot
+      # publish after a newer one. Then push <version>-<shortsha>-<run_number>
+      # exactly once: a re-run that finds the tag present does not re-push it,
+      # and any other registry answer fails the job.
+      - name: Push ghcr.io/maxkuminov/openclaw-tax:<version>-<shortsha>-<n>
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          tip=$(gh api "repos/${GITHUB_REPOSITORY}/branches/main" --jq .commit.sha)
+          if [ "$tip" != "$BUILD_SHA" ]; then
+            echo "::warning::${BUILD_SHA} is no longer the tip of main (${tip}): not published"
+            echo "Not published: \`${BUILD_SHA::7}\` is no longer the tip of main (\`${tip::7}\`)." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          tag="${VERSION}-${SHORT_SHA}-${GITHUB_RUN_NUMBER}"
+          [[ "$tag" =~ ^[0-9]{4}\.[0-9]+\.[0-9]+-[0-9a-f]+-[0-9]+$ ]] || { echo "::error::bad tag '$tag'"; exit 1; }
+          echo "$GH_TOKEN" | docker login ghcr.io -u "$ACTOR" --password-stdin
+          if out=$(docker manifest inspect "${IMAGE}:${tag}" 2>&1); then
+            echo "::notice::${IMAGE}:${tag} already exists (re-run): not re-pushed"
+            echo "\`${tag}\` already present (re-run): not re-pushed." >> "$GITHUB_STEP_SUMMARY"
+          elif grep -qiE 'manifest unknown|no such manifest|not found' <<<"$out"; then
+            docker tag openclaw-tax:ci "${IMAGE}:${tag}"
+            docker push "${IMAGE}:${tag}"
+            digest=$(docker inspect --format '{{range .RepoDigests}}{{println .}}{{end}}' "${IMAGE}:${tag}" \
+                     | grep -m1 "^${IMAGE}@sha256:" | cut -d@ -f2)
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "::error::no digest after push"; exit 1; }
+            {
+              echo "### Published"
+              echo
+              echo "\`${IMAGE}:${tag}@${digest}\`"
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::cannot tell whether ${IMAGE}:${tag} exists: ${out}"; exit 1
+          fi
+          docker logout ghcr.io

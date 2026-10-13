@@ -1,0 +1,47 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": [
+    "openclaw-tax-image: Renovate bumps the Dockerfile FROM (tag + digest) of ghcr.io/openclaw/openclaw.",
+    "Design: maxkuminov/infra docs/homelab-wave-oc.md OC-D9, OC-D10, 5.2. Overrides the org-inherited config (maxkuminov/renovate-config) for this repository."
+  ],
+  "timezone": "America/New_York",
+  "enabledManagers": ["dockerfile", "github-actions"],
+  "packageRules": [
+    {
+      "description": [
+        "Upstream OpenClaw base: STABLE tags only, the wave OC 5.2 regex (no betas, -N re-releases, -rDATE refreshes, variants, latest).",
+        "Plain lag behind the main gateway: the upstream tag must be one day old, PRs and merges only 9am-8pm America/New_York (OC-D10).",
+        "automerge stays FALSE until OC2: the activation step switches it on by its own PR; a hold on the main gateway switches it off again by PR (5.2)."
+      ],
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/openclaw/openclaw"],
+      "versioning": "regex:^(?<major>[0-9]{4})\\.(?<minor>0|[1-9][0-9]*)\\.(?<patch>0|[1-9][0-9]*)$",
+      "respectLatest": false,
+      "minimumReleaseAge": "1 day",
+      "schedule": ["after 9am and before 8pm"],
+      "automergeSchedule": ["after 9am and before 8pm"],
+      "groupName": "openclaw base",
+      "groupSlug": "openclaw-base",
+      "separateMajorMinor": false,
+      "automerge": false
+    },
+    {
+      "description": [
+        "A new digest under the SAME upstream tag means the tag moved; the digest pin exists to catch exactly that (wave OC L15). Never proposed, never merged."
+      ],
+      "matchDatasources": ["docker"],
+      "matchPackageNames": ["ghcr.io/openclaw/openclaw"],
+      "matchUpdateTypes": ["digest"],
+      "enabled": false
+    },
+    {
+      "description": [
+        "Workflow action pins: a merge rebuilds and republishes the tax image (same version, higher run number), so a human merges these."
+      ],
+      "matchManagers": ["github-actions"],
+      "groupName": "github-actions",
+      "groupSlug": "github-actions",
+      "automerge": false
+    }
+  ]
+}
