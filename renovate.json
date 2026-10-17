@@ -14,7 +14,7 @@
       "description": [
         "Upstream OpenClaw base: STABLE tags only, the wave OC 5.2 regex (no betas, -N re-releases, -rDATE refreshes, variants, latest).",
         "Plain lag behind the main gateway: the upstream tag must be one day old, PRs and merges only 9am-8pm America/New_York (OC-D10).",
-        "automerge stays FALSE until OC2: the activation step switches it on by its own PR; a hold on the main gateway switches it off again by PR (5.2)."
+        "automerge ON since OC2 (the activation step, its own PR): Renovate merges the FROM bump itself inside the window; a hold on the main gateway switches it off again by PR (5.2)."
       ],
       "matchDatasources": [
         "docker"
@@ -34,7 +34,9 @@
       "groupName": "openclaw base",
       "groupSlug": "openclaw-base",
       "separateMajorMinor": false,
-      "automerge": false
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": false
     },
     {
       "description": [
