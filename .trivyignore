@@ -3,3 +3,7 @@
 # Empty on purpose. The gate covers only Debian packages (our apt-get upgrade
 # layer). A line lands here only by PR, with a written reason and a date, for a
 # finding Debian has a fix for that this build cannot install yet (wave OC L12).
+#
+# 2026-10-16 (wave OC2): this comment exists to publish a SAME-VERSION rebuild
+# (2026.8.2-<sha>-2) for the 5.2 tax rollback test (two tags, one upstream
+# version: hold back to -1 without a state restore). No finding is ignored.
