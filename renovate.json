@@ -13,7 +13,7 @@
     {
       "description": [
         "Upstream OpenClaw base: STABLE tags only, the wave OC 5.2 regex (no betas, -N re-releases, -rDATE refreshes, variants, latest).",
-        "Plain lag behind the main gateway: the upstream tag must be one day old, PRs and merges only 9am-8pm America/New_York (OC-D10).",
+        "Lag behind the main gateway: PRs and merges only 9am-8pm America/New_York (OC-D10). minimumReleaseAge stays for any future timestamped source, but GHCR exposes no release timestamps, so timestamp-optional lets the bump through without an age check (Renovate 42's default timestamp-required held every bump from 10-17 to 11-14).",
         "automerge ON since OC2 (the activation step, its own PR): Renovate merges the FROM bump itself inside the window; a hold on the main gateway switches it off again by PR (5.2)."
       ],
       "matchDatasources": [
@@ -25,6 +25,7 @@
       "versioning": "regex:^(?<major>[0-9]{4})\\.(?<minor>0|[1-9][0-9]*)\\.(?<patch>0|[1-9][0-9]*)$",
       "respectLatest": false,
       "minimumReleaseAge": "1 day",
+      "minimumReleaseAgeBehaviour": "timestamp-optional",
       "schedule": [
         "after 9am and before 8pm"
       ],
