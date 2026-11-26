@@ -4,7 +4,7 @@
 # its multi-arch index digest. Renovate bumps tag and digest together
 # (renovate.json); scripts/ci.sh refuses any other FROM shape and checks the
 # base image's org.opencontainers.image.revision against upstream tag v<version>.
-FROM ghcr.io/openclaw/openclaw:2026.11.3@sha256:e73f689d663567f0fe3c5a85c54beb3e102dc21f0814bf375e9039ee2d2df51b
+FROM ghcr.io/openclaw/openclaw:2026.11.10@sha256:230afbdd8344310cac1e2d8e5dfad67315e82f3757692014310e77653639acb0
 
 USER root
 # - apt-get upgrade: the OS layer is ours to fix (the Trivy OS gate blocks on
